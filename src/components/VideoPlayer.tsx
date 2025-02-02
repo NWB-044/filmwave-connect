@@ -1,28 +1,48 @@
 import { useState, useRef, useEffect } from "react";
-import { Play, Pause, Volume2, VolumeX } from "lucide-react";
+import { Play, Pause, Volume2, VolumeX, Settings, Maximize } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Slider } from "@/components/ui/slider";
+import { toast } from "sonner";
 
 interface VideoPlayerProps {
   src: string;
+  subtitleSrc?: string;
   isAdmin?: boolean;
+  onStateChange?: (state: VideoState) => void;
 }
 
-const VideoPlayer = ({ src, isAdmin = false }: VideoPlayerProps) => {
+interface VideoState {
+  isPlaying: boolean;
+  currentTime: number;
+  playbackRate: number;
+  subtitleOffset: number;
+}
+
+const VideoPlayer = ({ src, subtitleSrc, isAdmin = false, onStateChange }: VideoPlayerProps) => {
   const [isPlaying, setIsPlaying] = useState(false);
   const [isMuted, setIsMuted] = useState(false);
   const [progress, setProgress] = useState(0);
   const [volume, setVolume] = useState(1);
+  const [isFullscreen, setIsFullscreen] = useState(false);
   const videoRef = useRef<HTMLVideoElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
 
   const togglePlay = () => {
     if (videoRef.current) {
       if (isPlaying) {
         videoRef.current.pause();
       } else {
-        videoRef.current.play();
+        videoRef.current.play().catch(error => {
+          toast.error("Failed to play video: " + error.message);
+        });
       }
       setIsPlaying(!isPlaying);
+      onStateChange?.({ 
+        isPlaying: !isPlaying,
+        currentTime: videoRef.current.currentTime,
+        playbackRate: videoRef.current.playbackRate,
+        subtitleOffset: 0
+      });
     }
   };
 
@@ -37,6 +57,12 @@ const VideoPlayer = ({ src, isAdmin = false }: VideoPlayerProps) => {
     if (videoRef.current) {
       const progress = (videoRef.current.currentTime / videoRef.current.duration) * 100;
       setProgress(progress);
+      onStateChange?.({
+        isPlaying,
+        currentTime: videoRef.current.currentTime,
+        playbackRate: videoRef.current.playbackRate,
+        subtitleOffset: 0
+      });
     }
   };
 
@@ -49,6 +75,16 @@ const VideoPlayer = ({ src, isAdmin = false }: VideoPlayerProps) => {
     }
   };
 
+  const toggleFullscreen = () => {
+    if (!document.fullscreenElement && containerRef.current) {
+      containerRef.current.requestFullscreen().catch(err => {
+        toast.error("Error attempting to enable fullscreen: " + err.message);
+      });
+    } else {
+      document.exitFullscreen();
+    }
+  };
+
   useEffect(() => {
     const video = videoRef.current;
     if (video) {
@@ -57,14 +93,32 @@ const VideoPlayer = ({ src, isAdmin = false }: VideoPlayerProps) => {
     }
   }, []);
 
+  useEffect(() => {
+    const handleFullscreenChange = () => {
+      setIsFullscreen(!!document.fullscreenElement);
+    };
+    document.addEventListener("fullscreenchange", handleFullscreenChange);
+    return () => document.removeEventListener("fullscreenchange", handleFullscreenChange);
+  }, []);
+
   return (
-    <div className="relative w-full aspect-video bg-black rounded-lg overflow-hidden">
+    <div ref={containerRef} className="relative w-full aspect-video bg-black rounded-lg overflow-hidden">
       <video
         ref={videoRef}
         src={src}
         className="w-full h-full"
         onClick={togglePlay}
-      />
+      >
+        {subtitleSrc && (
+          <track
+            kind="subtitles"
+            src={subtitleSrc}
+            srcLang="en"
+            label="English"
+            default
+          />
+        )}
+      </video>
       <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 to-transparent p-4">
         <div className="flex items-center gap-4">
           <Button
@@ -106,6 +160,30 @@ const VideoPlayer = ({ src, isAdmin = false }: VideoPlayerProps) => {
               }}
             />
           </div>
+          {isAdmin && (
+            <Button
+              variant="ghost"
+              size="icon"
+              className="text-white hover:text-primary"
+              onClick={() => {
+                if (videoRef.current) {
+                  const newRate = videoRef.current.playbackRate === 1 ? 1.5 : 1;
+                  videoRef.current.playbackRate = newRate;
+                  toast.success(`Playback speed: ${newRate}x`);
+                }
+              }}
+            >
+              <Settings className="w-4 h-4" />
+            </Button>
+          )}
+          <Button
+            variant="ghost"
+            size="icon"
+            className="text-white hover:text-primary"
+            onClick={toggleFullscreen}
+          >
+            <Maximize className="w-4 h-4" />
+          </Button>
         </div>
       </div>
     </div>
